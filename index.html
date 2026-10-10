@@ -1,0 +1,2278 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<title>Бабуин против Мамы и Папы</title>
+<style>
+  body { margin: 0; overflow: hidden; font-family: Arial, sans-serif; background: #000; cursor: none; }
+  canvas { display: block; }
+
+  /* Центральный курсор-прицел */
+  #centerCursor {
+    position: fixed;
+    top: 50%; left: 50%;
+    width: 24px; height: 24px;
+    margin: -12px 0 0 -12px;
+    z-index: 9999;
+    pointer-events: none;
+    display: none;
+  }
+  #centerCursor::before,
+  #centerCursor::after {
+    content: ''; position: absolute; background: white;
+    box-shadow: 0 0 3px black;
+  }
+  #centerCursor::before { width: 24px; height: 2px; top: 11px; left: 0; }
+  #centerCursor::after { width: 2px; height: 24px; left: 11px; top: 0; }
+  #centerCursor .dot {
+    position: absolute; top: 10px; left: 10px;
+    width: 4px; height: 4px; border-radius: 50%;
+    background: #ff3333; box-shadow: 0 0 3px black;
+  }
+  #centerCursor.visible { display: block; }
+
+  #hud {
+    position: fixed; top: 10px; left: 10px; color: white;
+    text-shadow: 2px 2px 4px black; font-size: 18px; z-index: 10;
+  }
+  #hud .hp { color: #ff4444; font-weight: bold; font-size: 22px; }
+  #hud .level { color: #ffdd44; margin-top: 5px; }
+
+  #overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.85);
+    color: white; display: flex; flex-direction: column;
+    justify-content: center; align-items: center;
+    font-size: 28px; text-align: center; z-index: 100;
+    padding: 20px; cursor: default;
+  }
+  #overlay h1 { font-size: 60px; margin: 10px; }
+  #overlay button {
+    margin-top: 30px; padding: 15px 40px; font-size: 22px;
+    cursor: pointer; background: #ffcc00; border: none;
+    border-radius: 8px; font-weight: bold;
+  }
+  #overlay button:hover { background: #ffaa00; }
+  .hidden { display: none !important; }
+
+  #hint {
+    position: fixed; bottom: 15px; left: 50%; transform: translateX(-50%);
+    color: white; text-shadow: 2px 2px 4px black; font-size: 16px; z-index: 10;
+  }
+
+  #bossSpeech {
+    position: fixed; top: 18%; left: 50%; transform: translateX(-50%);
+    background: white; color: black; padding: 15px 25px;
+    border-radius: 15px; font-size: 22px; font-weight: bold;
+    z-index: 20; max-width: 60%; text-align: center;
+    border: 3px solid #333; opacity: 0; transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  #bossSpeech::after {
+    content: ''; position: absolute; bottom: -15px; left: 50%;
+    transform: translateX(-50%); border: 15px solid transparent;
+    border-top-color: white; border-bottom: 0;
+  }
+  #bossSpeech.show { opacity: 1; }
+
+  #phaseDisplay {
+    position: fixed; top: 10px; right: 10px; color: white;
+    text-shadow: 2px 2px 4px black; font-size: 18px; z-index: 10;
+    text-align: right;
+  }
+  #phaseDisplay .phaseBar {
+    display: inline-block; width: 200px; height: 15px;
+    background: #333; border: 2px solid #fff; border-radius: 8px;
+    overflow: hidden; margin-top: 5px;
+  }
+  #phaseDisplay .phaseFill {
+    height: 100%; width: 100%; background: #ff2222; transition: width 0.3s;
+  }
+
+  #slowmo {
+    position: fixed; inset: 0; pointer-events: none;
+    box-shadow: inset 0 0 200px rgba(100, 150, 255, 0.6);
+    opacity: 0; transition: opacity 0.3s; z-index: 5;
+  }
+  #slowmo.active { opacity: 1; }
+
+  #records {
+    position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    background: rgba(0,0,0,0.9); color: white; padding: 20px 40px;
+    border-radius: 15px; border: 3px solid #ffcc00; z-index: 150;
+    font-size: 20px; min-width: 400px; cursor: default;
+  }
+  #records h2 { color: #ffcc00; margin-top: 0; text-align: center; }
+  #records ol { padding-left: 30px; }
+  #records li { margin: 8px 0; font-size: 18px; }
+  #records .closeBtn {
+    display: block; margin: 20px auto 0; padding: 10px 30px;
+    background: #ffcc00; border: none; border-radius: 8px;
+    font-weight: bold; cursor: pointer; font-size: 18px;
+  }
+  #recordsBtn {
+    position: fixed; bottom: 15px; right: 15px; z-index: 15;
+    padding: 10px 20px; background: #ffcc00; border: none;
+    border-radius: 8px; font-weight: bold; cursor: pointer; font-size: 16px;
+  }
+  #recordsBtn:hover { background: #ffaa00; }
+
+  /* Захват мыши оверлей */
+  #lockPrompt {
+    position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+    color: white; display: none;
+    justify-content: center; align-items: center;
+    font-size: 30px; z-index: 200; cursor: pointer;
+  }
+  #lockPrompt.visible { display: flex; }
+</style>
+</head>
+<body>
+
+<div id="centerCursor">
+  <div class="dot"></div>
+</div>
+
+<div id="slowmo"></div>
+
+<div id="hud" class="hidden">
+  <div class="hp">HP: 100</div>
+  <div class="level">Уровень 1: Мама Данила</div>
+  <div class="time" style="color:#88ff88; margin-top:5px;">Время: 0.0с</div>
+</div>
+
+<div id="phaseDisplay" class="hidden">
+  <div id="phaseName">Фаза 1/5</div>
+  <div class="phaseBar"><div class="phaseFill" id="phaseFill"></div></div>
+</div>
+
+<div id="hint" class="hidden">[WASD] ходить · [Мышь] смотреть · [ЛКМ] бросить · [ESC] пауза</div>
+
+<div id="bossSpeech"></div>
+
+<button id="recordsBtn" class="hidden">🏆 Рекорды</button>
+
+<div id="records" class="hidden">
+  <h2>🏆 ТАБЛИЦА РЕКОРДОВ</h2>
+  <ol id="recordsList"></ol>
+  <button class="closeBtn" onclick="document.getElementById('records').classList.add('hidden')">Закрыть</button>
+</div>
+
+<div id="lockPrompt">🖱️ Кликните, чтобы вернуться в игру</div>
+
+<div id="overlay">
+  <h1>🐒 БАБУИН против РОДИТЕЛЕЙ</h1>
+  <p>🐷 Уровень 1: Мама Данила (5 фаз)</p>
+  <p>🍺 Уровень 2: Папа-алкоголик (5 фаз)</p>
+  <p style="font-size:16px;color:#aaa;">⚠️ Включи звук! Вся озвучка синтезируется в реальном времени.</p>
+  <p style="font-size:16px;color:#88ff88;">🎵 Весёлая 8-битная музыка + голоса боссов</p>
+  <button id="startBtn">НАЧАТЬ ИГРУ</button>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://unpkg.com/three@0.160.0/build/three.module.js"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three';
+
+// ============================================================
+// ЗВУКОВОЙ ДВИЖОК
+// ============================================================
+let audioCtx = null;
+function initAudio() {
+  if (!audioCtx) {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+function playOink() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(280, now);
+  osc.frequency.exponentialRampToValueAtTime(140, now + 0.15);
+  osc.frequency.exponentialRampToValueAtTime(200, now + 0.25);
+  filter.type = 'lowpass';
+  filter.frequency.value = 1200;
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.25, now + 0.02);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+  osc.connect(filter).connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.35);
+  const osc2 = audioCtx.createOscillator();
+  const gain2 = audioCtx.createGain();
+  osc2.type = 'square';
+  osc2.frequency.setValueAtTime(180, now);
+  osc2.frequency.exponentialRampToValueAtTime(100, now + 0.2);
+  gain2.gain.setValueAtTime(0.15, now);
+  gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  osc2.connect(gain2).connect(audioCtx.destination);
+  osc2.start(now);
+  osc2.stop(now + 0.3);
+}
+
+function playBurp() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const dur = 0.8;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  const filter = audioCtx.createBiquadFilter();
+  osc.type = 'sawtooth';
+  osc.frequency.setValueAtTime(90, now);
+  osc.frequency.linearRampToValueAtTime(70, now + dur * 0.5);
+  osc.frequency.linearRampToValueAtTime(120, now + dur * 0.7);
+  osc.frequency.exponentialRampToValueAtTime(50, now + dur);
+  filter.type = 'lowpass';
+  filter.frequency.setValueAtTime(400, now);
+  filter.frequency.linearRampToValueAtTime(200, now + dur);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.35, now + 0.05);
+  gain.gain.linearRampToValueAtTime(0.3, now + dur * 0.6);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + dur);
+  const lfo = audioCtx.createOscillator();
+  const lfoGain = audioCtx.createGain();
+  lfo.frequency.value = 25;
+  lfoGain.gain.value = 30;
+  lfo.connect(lfoGain).connect(osc.frequency);
+  lfo.start(now);
+  lfo.stop(now + dur);
+  osc.connect(filter).connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + dur);
+}
+
+function playSlipperHit() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.15, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    const t = i / audioCtx.sampleRate;
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 40) * 0.5;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'bandpass';
+  filter.frequency.value = 400;
+  filter.Q.value = 2;
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0.6;
+  src.connect(filter).connect(gain).connect(audioCtx.destination);
+  src.start(now);
+  const osc = audioCtx.createOscillator();
+  const g2 = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(180, now);
+  osc.frequency.exponentialRampToValueAtTime(60, now + 0.1);
+  g2.gain.setValueAtTime(0.3, now);
+  g2.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+  osc.connect(g2).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.15);
+}
+
+function playBubble() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  for (let i = 0; i < 5; i++) {
+    const t = now + i * 0.08 + Math.random() * 0.03;
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    const baseFreq = 200 + Math.random() * 300;
+    osc.frequency.setValueAtTime(baseFreq, t);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 1.8, t + 0.08);
+    osc.frequency.exponentialRampToValueAtTime(baseFreq * 0.7, t + 0.15);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.15, t + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.18);
+    osc.connect(gain).connect(audioCtx.destination);
+    osc.start(t);
+    osc.stop(t + 0.2);
+  }
+}
+
+function playSplash() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.4, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    const t = i / audioCtx.sampleRate;
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 6) * 0.4;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 3000;
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0.7;
+  src.connect(filter).connect(gain).connect(audioCtx.destination);
+  src.start(now);
+}
+
+function playThrow() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(900, now);
+  osc.frequency.exponentialRampToValueAtTime(300, now + 0.25);
+  gain.gain.setValueAtTime(0.12, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.25);
+}
+
+function playBossPunch() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'square';
+  osc.frequency.setValueAtTime(120, now);
+  osc.frequency.exponentialRampToValueAtTime(40, now + 0.2);
+  gain.gain.setValueAtTime(0.4, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.25);
+  const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.1, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    const t = i / audioCtx.sampleRate;
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 30) * 0.5;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  const g2 = audioCtx.createGain();
+  g2.gain.value = 0.5;
+  src.connect(g2).connect(audioCtx.destination);
+  src.start(now);
+}
+
+function playBossScream(isPig) {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = isPig ? 'sawtooth' : 'square';
+  const baseFreq = isPig ? 400 : 250;
+  osc.frequency.setValueAtTime(baseFreq, now);
+  osc.frequency.linearRampToValueAtTime(baseFreq * 1.5, now + 0.15);
+  osc.frequency.linearRampToValueAtTime(baseFreq * 0.8, now + 0.4);
+  gain.gain.setValueAtTime(0, now);
+  gain.gain.linearRampToValueAtTime(0.2, now + 0.05);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(now);
+  osc.stop(now + 0.5);
+}
+
+function playFlush() {
+  if (!audioCtx) return;
+  const now = audioCtx.currentTime;
+  const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 1.5, audioCtx.sampleRate);
+  const data = buffer.getChannelData(0);
+  for (let i = 0; i < data.length; i++) {
+    const t = i / audioCtx.sampleRate;
+    data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 1.5) * 0.3;
+  }
+  const src = audioCtx.createBufferSource();
+  src.buffer = buffer;
+  const filter = audioCtx.createBiquadFilter();
+  filter.type = 'lowpass';
+  filter.frequency.value = 1500;
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0.6;
+  src.connect(filter).connect(gain).connect(audioCtx.destination);
+  src.start(now);
+}
+
+// ---------- ОЗВУЧКА ГОЛОСОМ (TTS) ----------
+let speechSynth = null;
+function initSpeech() {
+  if ('speechSynthesis' in window) {
+    speechSynth = window.speechSynthesis;
+    // Прогрев голосов
+    speechSynth.getVoices();
+    speechSynth.onvoiceschanged = () => speechSynth.getVoices();
+  }
+}
+
+function speakLine(text, voiceType = 'mama') {
+  if (!speechSynth) return;
+  try {
+    speechSynth.cancel();
+    const utter = new SpeechSynthesisUtterance(text);
+    utter.lang = 'ru-RU';
+    utter.rate = voiceType === 'mama' ? 1.25 : 0.85;
+    utter.pitch = voiceType === 'mama' ? 1.9 : 0.4;
+    utter.volume = 0.9;
+
+    const voices = speechSynth.getVoices();
+    const ruVoices = voices.filter(v => v.lang.toLowerCase().startsWith('ru'));
+    if (ruVoices.length > 0) {
+      if (voiceType === 'mama') {
+        const female = ruVoices.find(v => /female|жен|milena|alena|irina|svetlana/i.test(v.name));
+        utter.voice = female || ruVoices[0];
+      } else {
+        const male = ruVoices.find(v => /male|муж|yuri|dmitry|maxim|artem/i.test(v.name));
+        utter.voice = male || ruVoices[ruVoices.length - 1];
+      }
+    }
+    speechSynth.speak(utter);
+  } catch (e) {
+    console.warn('TTS ошибка:', e);
+  }
+}
+
+function stopSpeech() {
+  if (speechSynth) speechSynth.cancel();
+}
+
+// ---------- 8-БИТ МУЗЫКА ----------
+let musicPlaying = false;
+let musicScheduler = null;
+const MUSIC_TEMPO = 0.15;
+const MELODY = [
+  523, 587, 659, 523, 659, 587, 523, 0,
+  587, 659, 698, 587, 698, 659, 587, 0,
+  659, 698, 784, 659, 784, 698, 659, 0,
+  523, 392, 440, 494, 523, 494, 440, 392,
+];
+const BASS = [
+  131, 0, 131, 0, 165, 0, 165, 0,
+  147, 0, 147, 0, 175, 0, 175, 0,
+  165, 0, 165, 0, 196, 0, 196, 0,
+  131, 0, 98, 0, 110, 0, 123, 0,
+];
+
+function playNote(freq, startTime, duration, type = 'square', volume = 0.08) {
+  if (freq === 0) return;
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.value = freq;
+  gain.gain.setValueAtTime(0, startTime);
+  gain.gain.linearRampToValueAtTime(volume, startTime + 0.01);
+  gain.gain.linearRampToValueAtTime(volume * 0.6, startTime + duration * 0.7);
+  gain.gain.exponentialRampToValueAtTime(0.001, startTime + duration);
+  osc.connect(gain).connect(audioCtx.destination);
+  osc.start(startTime);
+  osc.stop(startTime + duration + 0.05);
+}
+
+let musicStep = 0;
+let nextNoteTime = 0;
+
+function musicLoop() {
+  if (!musicPlaying || !audioCtx) return;
+  while (nextNoteTime < audioCtx.currentTime + 0.2) {
+    const melodyNote = MELODY[musicStep % MELODY.length];
+    const bassNote = BASS[musicStep % BASS.length];
+    playNote(melodyNote, nextNoteTime, MUSIC_TEMPO * 0.9, 'square', 0.06);
+    playNote(bassNote, nextNoteTime, MUSIC_TEMPO * 0.9, 'triangle', 0.1);
+    if (musicStep % 2 === 0) {
+      const buffer = audioCtx.createBuffer(1, audioCtx.sampleRate * 0.05, audioCtx.sampleRate);
+      const data = buffer.getChannelData(0);
+      for (let i = 0; i < data.length; i++) {
+        const t = i / audioCtx.sampleRate;
+        data[i] = (Math.random() * 2 - 1) * Math.exp(-t * 60) * 0.15;
+      }
+      const src = audioCtx.createBufferSource();
+      src.buffer = buffer;
+      const gain = audioCtx.createGain();
+      gain.gain.value = 0.3;
+      src.connect(gain).connect(audioCtx.destination);
+      src.start(nextNoteTime);
+    }
+    nextNoteTime += MUSIC_TEMPO;
+    musicStep++;
+  }
+}
+
+function startMusic() {
+  if (musicPlaying || !audioCtx) return;
+  musicPlaying = true;
+  musicStep = 0;
+  nextNoteTime = audioCtx.currentTime + 0.1;
+  musicScheduler = setInterval(musicLoop, 50);
+}
+
+function stopMusic() {
+  musicPlaying = false;
+  if (musicScheduler) {
+    clearInterval(musicScheduler);
+    musicScheduler = null;
+  }
+}
+
+// ============================================================
+// СЦЕНА
+// ============================================================
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x87ceeb);
+scene.fog = new THREE.Fog(0x87ceeb, 40, 100);
+
+const camera = new THREE.PerspectiveCamera(75, innerWidth/innerHeight, 0.1, 250);
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setSize(innerWidth, innerHeight);
+renderer.shadowMap.enabled = true;
+document.body.appendChild(renderer.domElement);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth/innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+});
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+const dirLight = new THREE.DirectionalLight(0xffffff, 1.2);
+dirLight.position.set(15, 25, 10);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.width = 2048;
+dirLight.shadow.mapSize.height = 2048;
+dirLight.shadow.camera.left = -40;
+dirLight.shadow.camera.right = 40;
+dirLight.shadow.camera.top = 40;
+dirLight.shadow.camera.bottom = -40;
+scene.add(dirLight);
+
+const ground = new THREE.Mesh(
+  new THREE.PlaneGeometry(60, 60),
+  new THREE.MeshStandardMaterial({ color: 0x3a8a3a })
+);
+ground.rotation.x = -Math.PI/2;
+ground.receiveShadow = true;
+scene.add(ground);
+
+const wallMat = new THREE.MeshStandardMaterial({ color: 0x8b6b4a });
+[[0,3,30,60,6,1],[0,3,-30,60,6,1],[30,3,0,1,6,60],[-30,3,0,1,6,60]].forEach(w => {
+  const m = new THREE.Mesh(new THREE.BoxGeometry(w[3], w[4], w[5]), wallMat);
+  m.position.set(w[0], w[1], w[2]);
+  m.castShadow = true; m.receiveShadow = true;
+  scene.add(m);
+});
+
+// ============================================================
+// БАБУИН
+// ============================================================
+function createBaboon() {
+  const g = new THREE.Group();
+  const furColor = 0x8b6f47;
+  const darkFur = 0x4a3520;
+  const skinColor = 0xc9a878;
+  const faceColor = 0xd4a574;
+
+  const torso = new THREE.Mesh(
+    new THREE.CapsuleGeometry(0.55, 0.8, 8, 16),
+    new THREE.MeshStandardMaterial({ color: furColor, roughness: 0.9 })
+  );
+  torso.position.y = 1.15;
+  torso.castShadow = true;
+  g.add(torso);
+
+  const chest = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 16, 16),
+    new THREE.MeshStandardMaterial({ color: skinColor, roughness: 0.8 })
+  );
+  chest.position.set(0, 1.25, 0.3);
+  chest.scale.set(1, 1.1, 0.6);
+  g.add(chest);
+
+  const headGroup = new THREE.Group();
+  headGroup.position.y = 2.1;
+  g.add(headGroup);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.42, 20, 20),
+    new THREE.MeshStandardMaterial({ color: furColor, roughness: 0.9 })
+  );
+  head.scale.set(1, 1.05, 1);
+  head.castShadow = true;
+  headGroup.add(head);
+
+  const snout = new THREE.Mesh(
+    new THREE.BoxGeometry(0.35, 0.3, 0.55),
+    new THREE.MeshStandardMaterial({ color: faceColor, roughness: 0.8 })
+  );
+  snout.position.set(0, -0.1, 0.42);
+  snout.castShadow = true;
+  headGroup.add(snout);
+
+  const nose = new THREE.Mesh(
+    new THREE.SphereGeometry(0.09, 10, 10),
+    new THREE.MeshStandardMaterial({ color: 0x2a1a10 })
+  );
+  nose.position.set(0, -0.05, 0.72);
+  headGroup.add(nose);
+
+  [-0.15, 0.15].forEach(x => {
+    const eyeWhite = new THREE.Mesh(
+      new THREE.SphereGeometry(0.08, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0xffffff })
+    );
+    eyeWhite.position.set(x, 0.08, 0.36);
+    headGroup.add(eyeWhite);
+
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.045, 10, 10),
+      new THREE.MeshStandardMaterial({ color: 0x000000 })
+    );
+    pupil.position.set(x, 0.08, 0.43);
+    headGroup.add(pupil);
+  });
+
+  [-0.42, 0.42].forEach(x => {
+    const ear = new THREE.Mesh(
+      new THREE.SphereGeometry(0.13, 12, 12),
+      new THREE.MeshStandardMaterial({ color: skinColor })
+    );
+    ear.position.set(x, 0.05, 0);
+    ear.scale.set(0.6, 1.2, 0.8);
+    headGroup.add(ear);
+  });
+
+  const mane = new THREE.Mesh(
+    new THREE.TorusGeometry(0.45, 0.12, 8, 20),
+    new THREE.MeshStandardMaterial({ color: darkFur, roughness: 1 })
+  );
+  mane.rotation.x = Math.PI/2;
+  mane.position.y = 0.05;
+  headGroup.add(mane);
+
+  const arms = [];
+  [-1, 1].forEach(side => {
+    const armGroup = new THREE.Group();
+    armGroup.position.set(side * 0.6, 1.6, 0);
+
+    const upperArm = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.13, 0.5, 6, 12),
+      new THREE.MeshStandardMaterial({ color: furColor })
+    );
+    upperArm.position.y = -0.3;
+    upperArm.castShadow = true;
+    armGroup.add(upperArm);
+
+    const forearm = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.11, 0.5, 6, 12),
+      new THREE.MeshStandardMaterial({ color: furColor })
+    );
+    forearm.position.y = -0.85;
+    forearm.castShadow = true;
+    armGroup.add(forearm);
+
+    const hand = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15, 12, 12),
+      new THREE.MeshStandardMaterial({ color: skinColor })
+    );
+    hand.position.y = -1.15;
+    hand.scale.set(1, 0.8, 1.1);
+    armGroup.add(hand);
+
+    armGroup.userData.side = side;
+    g.add(armGroup);
+    arms.push(armGroup);
+  });
+
+  [-0.25, 0.25].forEach(x => {
+    const leg = new THREE.Mesh(
+      new THREE.CapsuleGeometry(0.15, 0.5, 6, 12),
+      new THREE.MeshStandardMaterial({ color: furColor })
+    );
+    leg.position.set(x, 0.4, 0);
+    leg.castShadow = true;
+    g.add(leg);
+
+    const foot = new THREE.Mesh(
+      new THREE.BoxGeometry(0.25, 0.12, 0.4),
+      new THREE.MeshStandardMaterial({ color: skinColor })
+    );
+    foot.position.set(x, 0.06, 0.08);
+    g.add(foot);
+  });
+
+  const tailCurve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(0, 1.0, -0.5),
+    new THREE.Vector3(0.2, 1.4, -0.7),
+    new THREE.Vector3(0.3, 1.6, -0.5),
+    new THREE.Vector3(0.15, 1.5, -0.3),
+  ]);
+  const tail = new THREE.Mesh(
+    new THREE.TubeGeometry(tailCurve, 20, 0.06, 8, false),
+    new THREE.MeshStandardMaterial({ color: furColor })
+  );
+  tail.castShadow = true;
+  g.add(tail);
+
+  const butt = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 12, 12),
+    new THREE.MeshStandardMaterial({ color: 0xd97a8a })
+  );
+  butt.position.set(0, 1.0, -0.55);
+  g.add(butt);
+
+  g.userData.arms = arms;
+  g.userData.head = headGroup;
+  return g;
+}
+
+const baboon = createBaboon();
+scene.add(baboon);
+
+// ============================================================
+// ИГРОК
+// ============================================================
+const player = {
+  pos: new THREE.Vector3(0, 0, -15),
+  yaw: 0,
+  pitch: 0,
+  speed: 8,
+  hp: 100,
+  firstPerson: false,
+  startTime: 0,
+  elapsed: 0,
+};
+
+// Мышь — фиксированное управление
+const MOUSE_SENSITIVITY = 0.0022;
+
+const keys = {};
+addEventListener('keydown', e => keys[e.code] = true);
+addEventListener('keyup', e => keys[e.code] = false);
+
+// ============================================================
+// UI
+// ============================================================
+const overlay = document.getElementById('overlay');
+const hud = document.getElementById('hud');
+const hint = document.getElementById('hint');
+const centerCursor = document.getElementById('centerCursor');
+const hpEl = document.querySelector('.hp');
+const levelEl = document.querySelector('.level');
+const timeEl = document.querySelector('.time');
+const speechEl = document.getElementById('bossSpeech');
+const phaseDisplay = document.getElementById('phaseDisplay');
+const phaseName = document.getElementById('phaseName');
+const phaseFill = document.getElementById('phaseFill');
+const slowmoEl = document.getElementById('slowmo');
+const recordsBtn = document.getElementById('recordsBtn');
+const recordsEl = document.getElementById('records');
+const recordsList = document.getElementById('recordsList');
+const lockPrompt = document.getElementById('lockPrompt');
+
+let mouseLocked = false;
+let gameStarted = false;
+
+// ============================================================
+// POINTER LOCK — курсор фиксируется в центре
+// ============================================================
+function requestLock() {
+  renderer.domElement.requestPointerLock();
+}
+
+document.getElementById('startBtn').addEventListener('click', () => {
+  initAudio();
+  initSpeech();
+  startMusic();
+  player.startTime = performance.now();
+  gameStarted = true;
+
+  overlay.classList.add('hidden');
+  hud.classList.remove('hidden');
+  hint.classList.remove('hidden');
+  centerCursor.classList.add('visible');
+  phaseDisplay.classList.remove('hidden');
+  recordsBtn.classList.remove('hidden');
+
+  requestLock();
+});
+
+// Клик по оверлею "кликните чтобы вернуться"
+lockPrompt.addEventListener('click', () => {
+  lockPrompt.classList.remove('visible');
+  requestLock();
+});
+
+// Клик по канвасу — перезапросить lock
+renderer.domElement.addEventListener('click', () => {
+  if (gameStarted && !mouseLocked && !overlay.classList.contains('hidden') === false) {
+    requestLock();
+  }
+});
+
+document.addEventListener('pointerlockchange', () => {
+  mouseLocked = document.pointerLockElement === renderer.domElement;
+
+  if (gameStarted) {
+    if (mouseLocked) {
+      lockPrompt.classList.remove('visible');
+      centerCursor.classList.add('visible');
+    } else {
+      // Игра запущена, но мышь отпущена — показываем подсказку
+      lockPrompt.classList.add('visible');
+    }
+  }
+});
+
+// ============================================================
+// УПРАВЛЕНИЕ МЫШЬЮ — стабильное, без инверсии
+// ============================================================
+document.addEventListener('mousemove', e => {
+  if (!mouseLocked) return;
+
+  // Мышь вправо (movementX > 0) → камера вправо (yaw уменьшается)
+  // Мышь вверх (movementY < 0) → камера вверх (pitch растёт)
+  player.yaw   -= e.movementX * MOUSE_SENSITIVITY;
+  player.pitch -= e.movementY * MOUSE_SENSITIVITY;
+
+  // Ограничение pitch
+  const maxPitch = Math.PI / 2 - 0.05;
+  player.pitch = Math.max(-maxPitch, Math.min(maxPitch, player.pitch));
+});
+
+document.addEventListener('mousedown', e => {
+  if (!mouseLocked) return;
+  if (e.button === 0) throwProjectile();
+  if (e.button === 2) player.firstPerson = !player.firstPerson;
+});
+
+document.addEventListener('contextmenu', e => e.preventDefault());
+
+// ESC — снять lock (браузер делает это сам)
+// после ESC pointerlockchange покажет подсказку
+
+// ============================================================
+// РЕЧЬ БОССА + ОЗВУЧКА
+// ============================================================
+function bossSay(text, duration = 2200, voiceType = null) {
+  speechEl.textContent = text;
+  speechEl.classList.add('show');
+  clearTimeout(speechEl._timeout);
+  speechEl._timeout = setTimeout(() => speechEl.classList.remove('show'), duration);
+
+  // Определяем голос
+  if (!voiceType) {
+    voiceType = (boss && boss.userData.isPig) ? 'mama' : 'papa';
+  }
+
+  // Убираем эмодзи
+  const cleanText = text.replace(/[🐷🍺💩🚽💧😂😱😡💀🏆🎵🥇🥈🥉]/g, '').trim();
+  if (cleanText) speakLine(cleanText, voiceType);
+}
+
+// ============================================================
+// ФАЗЫ
+// ============================================================
+const MAMA_PHASES = [
+  { hp: 5, color: 0xffaacc, scale: 1.0, speed: 1.8, angry: 0.0,
+    lines: ['Данил, домой!', 'Ты поел?', 'Уроки сделал?!'] },
+  { hp: 4, color: 0xff88aa, scale: 1.1, speed: 2.2, angry: 0.3,
+    lines: ['Я кому сказала?!', 'А ну иди сюда!', 'Опять в телефоне!'] },
+  { hp: 3, color: 0xff5599, scale: 1.2, speed: 2.6, angry: 0.6,
+    lines: ['Ты меня довёл!', 'Я тебя породила!', 'Хватит бегать!'] },
+  { hp: 2, color: 0xff2277, scale: 1.35, speed: 3.2, angry: 0.85,
+    lines: ['Хрю-хрю!', 'Сейчас получишь!', 'Я в ярости!'] },
+  { hp: 1, color: 0xff0044, scale: 1.5, speed: 4.0, angry: 1.0,
+    lines: ['Хрю-хрю-хрю!', 'Последнее предупреждение!', 'Ты труп, бабуин!'] },
+];
+
+const DAD_PHASES = [
+  { hp: 5, color: 0x2266cc, scale: 1.0, speed: 3.0, angry: 0.0,
+    lines: ['Данил, тапок где?', 'Ты мужчина?', 'Спокойно поговорим.'] },
+  { hp: 4, color: 0x1e55bb, scale: 1.1, speed: 3.5, angry: 0.3,
+    lines: ['Я в твои годы...', 'Сейчас ремнём!', 'Не зли меня.'] },
+  { hp: 3, color: 0x1a44aa, scale: 1.2, speed: 4.0, angry: 0.6,
+    lines: ['Ты доигрался!', 'В угол встанешь!', 'Хулиган!'] },
+  { hp: 2, color: 0x1133aa, scale: 1.35, speed: 4.8, angry: 0.85,
+    lines: ['Я тебя накажу!', 'Мужчины не плачут!', 'Где ремень?!'] },
+  { hp: 1, color: 0x001a88, scale: 1.5, speed: 6.0, angry: 1.0,
+    lines: ['Я в ярости!', 'Ты меня достал!', 'Всё, ты попал!'] },
+];
+
+// ============================================================
+// СВИНЬЯ
+// ============================================================
+function createProceduralPig() {
+  const g = new THREE.Group();
+
+  const body = new THREE.Mesh(
+    new THREE.SphereGeometry(1.0, 20, 20),
+    new THREE.MeshStandardMaterial({ color: 0xffcccc, roughness: 0.7 })
+  );
+  body.scale.set(1.4, 1.0, 1.9);
+  body.position.y = 1.4;
+  body.castShadow = true;
+  body.userData.isBody = true;
+  g.add(body);
+
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 1.5, 1.6);
+  g.add(headGroup);
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.65, 20, 20),
+    new THREE.MeshStandardMaterial({ color: 0xffcccc, roughness: 0.7 })
+  );
+  head.castShadow = true;
+  headGroup.add(head);
+
+  const snout = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.3, 0.35, 0.25, 12),
+    new THREE.MeshStandardMaterial({ color: 0xff99bb })
+  );
+  snout.rotation.x = Math.PI/2;
+  snout.position.set(0, -0.1, 0.6);
+  headGroup.add(snout);
+
+  [-0.1, 0.1].forEach(x => {
+    const n = new THREE.Mesh(
+      new THREE.SphereGeometry(0.05, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x661122 })
+    );
+    n.position.set(x, -0.1, 0.74);
+    headGroup.add(n);
+  });
+
+  [-0.25, 0.25].forEach(x => {
+    const eye = new THREE.Mesh(
+      new THREE.SphereGeometry(0.09, 10, 10),
+      new THREE.MeshStandardMaterial({ color: 0x000000 })
+    );
+    eye.position.set(x, 0.2, 0.5);
+    headGroup.add(eye);
+  });
+
+  [-0.5, 0.5].forEach(x => {
+    const ear = new THREE.Mesh(
+      new THREE.ConeGeometry(0.25, 0.5, 4),
+      new THREE.MeshStandardMaterial({ color: 0xff99bb })
+    );
+    ear.position.set(x, 0.6, -0.1);
+    ear.rotation.z = x > 0 ? -0.4 : 0.4;
+    headGroup.add(ear);
+  });
+
+  [-0.5, 0.5].forEach(x => {
+    [-0.6, 0.6].forEach(z => {
+      const leg = new THREE.Mesh(
+        new THREE.CylinderGeometry(0.15, 0.15, 0.9, 10),
+        new THREE.MeshStandardMaterial({ color: 0xff9999 })
+      );
+      leg.position.set(x, 0.45, z);
+      leg.castShadow = true;
+      g.add(leg);
+    });
+  });
+
+  const tail = new THREE.Mesh(
+    new THREE.TorusGeometry(0.15, 0.04, 8, 16),
+    new THREE.MeshStandardMaterial({ color: 0xff9999 })
+  );
+  tail.position.set(0, 1.6, -1.85);
+  tail.rotation.y = Math.PI/2;
+  g.add(tail);
+
+  return g;
+}
+
+// ============================================================
+// БОСС-МАМА
+// ============================================================
+function createBossMama() {
+  const group = new THREE.Group();
+
+  const texLoader = new THREE.TextureLoader();
+  texLoader.load('mama.png',
+    (tex) => {
+      const spriteMat = new THREE.SpriteMaterial({ map: tex, transparent: true });
+      const pigSprite = new THREE.Sprite(spriteMat);
+      pigSprite.scale.set(4.5, 3.5, 1);
+      pigSprite.position.y = 1.8;
+      pigSprite.userData.isBody = true;
+      pigSprite.userData.isSprite = true;
+      group.add(pigSprite);
+      const proc = group.userData.procBody;
+      if (proc) group.remove(proc);
+    },
+    undefined,
+    () => console.log('mama.png не найдена')
+  );
+
+  const procPig = createProceduralPig();
+  procPig.userData.isBody = true;
+  group.add(procPig);
+  group.userData.procBody = procPig;
+
+  group.position.set(0, 0, 15);
+  group.userData = {
+    hp: 5, maxHp: 5, speed: 1.8,
+    name: 'Мама Данила',
+    isPig: true,
+    baseY: 0,
+    angerLevel: 0,
+    talkTimer: 0,
+    oinkTimer: 0,
+    phase: 0,
+    phases: MAMA_PHASES,
+    talkLines: MAMA_PHASES[0].lines,
+    punchCooldown: 0,
+    punchAnim: 0,
+    bruises: [],
+  };
+
+  const hpBar = makeHpBar();
+  hpBar.position.y = 4.3;
+  group.add(hpBar);
+
+  const label = makeNameLabel('🐷 Мама Данила', '#ff66cc');
+  label.position.y = 5.0;
+  group.add(label);
+
+  scene.add(group);
+  return group;
+}
+
+// ============================================================
+// БОСС-ПАПА
+// ============================================================
+let dadBreathCloud = null;
+const dadBreathParticles = [];
+
+function createBossDad() {
+  const group = new THREE.Group();
+
+  const pantsMat = new THREE.MeshStandardMaterial({ color: 0x2a2a3a, roughness: 1 });
+  [-0.4, 0.4].forEach(x => {
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 1.4, 10), pantsMat);
+    leg.position.set(x, 0.7, 0);
+    leg.castShadow = true;
+    group.add(leg);
+
+    const shoe = new THREE.Mesh(
+      new THREE.BoxGeometry(0.4, 0.25, 0.7),
+      new THREE.MeshStandardMaterial({ color: 0x1a1a1a })
+    );
+    shoe.position.set(x, 0.12, 0.15);
+    group.add(shoe);
+  });
+
+  const shirtMat = new THREE.MeshStandardMaterial({ color: 0x3a4a6a, roughness: 1 });
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.7, 0.8), shirtMat);
+  torso.position.y = 2.2;
+  torso.castShadow = true;
+  torso.userData.isBody = true;
+  group.add(torso);
+
+  for (let i = 0; i < 5; i++) {
+    const stain = new THREE.Mesh(
+      new THREE.SphereGeometry(0.12 + Math.random() * 0.1, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x2a2418, roughness: 1 })
+    );
+    stain.position.set(
+      (Math.random() - 0.5) * 1.2,
+      2.0 + Math.random() * 0.8,
+      0.42
+    );
+    stain.scale.z = 0.1;
+    group.add(stain);
+  }
+
+  const belly = new THREE.Mesh(
+    new THREE.SphereGeometry(0.5, 16, 16),
+    new THREE.MeshStandardMaterial({ color: 0x3a4a6a, roughness: 1 })
+  );
+  belly.position.set(0, 1.7, 0.1);
+  belly.scale.set(1.3, 0.9, 1);
+  group.add(belly);
+
+  const armMat = new THREE.MeshStandardMaterial({ color: 0x3a4a6a, roughness: 1 });
+  const skinMat = new THREE.MeshStandardMaterial({ color: 0xc99a7a, roughness: 0.9 });
+  const arms = [];
+  [-1, 1].forEach(side => {
+    const armGroup = new THREE.Group();
+    armGroup.position.set(side * 0.9, 2.4, 0);
+
+    const upper = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.85, 10), armMat);
+    upper.position.y = -0.42;
+    armGroup.add(upper);
+
+    const lower = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.16, 0.8, 10), skinMat);
+    lower.position.y = -1.2;
+    armGroup.add(lower);
+
+    const hand = new THREE.Mesh(new THREE.SphereGeometry(0.18, 12, 12), skinMat);
+    hand.position.y = -1.65;
+    armGroup.add(hand);
+
+    armGroup.userData.side = side;
+    armGroup.rotation.z = side * 0.25;
+    group.add(armGroup);
+    arms.push(armGroup);
+  });
+  group.userData.arms = arms;
+
+  const headGroup = new THREE.Group();
+  headGroup.position.y = 3.5;
+  group.add(headGroup);
+  group.userData.head = headGroup;
+
+  const head = new THREE.Mesh(
+    new THREE.SphereGeometry(0.6, 20, 20),
+    new THREE.MeshStandardMaterial({ color: 0xc99a7a, roughness: 0.9 })
+  );
+  head.castShadow = true;
+  headGroup.add(head);
+
+  [-0.3, 0.3].forEach(x => {
+    const cheek = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0xd45a4a, roughness: 1 })
+    );
+    cheek.position.set(x, -0.1, 0.45);
+    cheek.scale.set(1, 0.8, 0.3);
+    headGroup.add(cheek);
+  });
+
+  const nose = new THREE.Mesh(
+    new THREE.SphereGeometry(0.18, 14, 14),
+    new THREE.MeshStandardMaterial({ color: 0xd45a4a, roughness: 0.85 })
+  );
+  nose.position.set(0, -0.02, 0.6);
+  nose.scale.set(1, 0.9, 1.1);
+  headGroup.add(nose);
+
+  [-0.2, 0.2].forEach(x => {
+    const eyeWhite = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1, 12, 12),
+      new THREE.MeshStandardMaterial({ color: 0xffeedd })
+    );
+    eyeWhite.position.set(x, 0.12, 0.52);
+    headGroup.add(eyeWhite);
+
+    const pupil = new THREE.Mesh(
+      new THREE.SphereGeometry(0.05, 10, 10),
+      new THREE.MeshStandardMaterial({ color: 0x333333 })
+    );
+    pupil.position.set(x, 0.1, 0.6);
+    headGroup.add(pupil);
+  });
+
+  const browMat = new THREE.MeshStandardMaterial({ color: 0x3a2418 });
+  [-0.22, 0.22].forEach((x, i) => {
+    const brow = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.1, 0.12), browMat);
+    brow.position.set(x, 0.28, 0.55);
+    brow.rotation.z = i === 0 ? 0.5 : -0.5;
+    headGroup.add(brow);
+  });
+
+  const stubble = new THREE.Mesh(
+    new THREE.SphereGeometry(0.58, 20, 20, 0, Math.PI * 2, Math.PI * 0.55, Math.PI * 0.45),
+    new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 1, transparent: true, opacity: 0.7 })
+  );
+  stubble.position.y = -0.05;
+  headGroup.add(stubble);
+
+  const mustache = new THREE.Mesh(
+    new THREE.BoxGeometry(1.0, 0.15, 0.18),
+    new THREE.MeshStandardMaterial({ color: 0x2a1a10 })
+  );
+  mustache.position.set(0, -0.15, 0.55);
+  headGroup.add(mustache);
+
+  const hairMat = new THREE.MeshStandardMaterial({ color: 0x3a2a1a, roughness: 1 });
+  for (let i = 0; i < 8; i++) {
+    const tuft = new THREE.Mesh(new THREE.ConeGeometry(0.15, 0.35, 6), hairMat);
+    const a = (i / 8) * Math.PI * 2;
+    tuft.position.set(Math.cos(a) * 0.4, 0.5, Math.sin(a) * 0.4);
+    tuft.rotation.z = (Math.random() - 0.5) * 0.8;
+    tuft.rotation.x = (Math.random() - 0.5) * 0.8;
+    headGroup.add(tuft);
+  }
+
+  const bottleGroup = new THREE.Group();
+  const bottleBody = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.12, 0.14, 0.6, 12),
+    new THREE.MeshStandardMaterial({ color: 0x2a4a2a, roughness: 0.3, transparent: true, opacity: 0.85 })
+  );
+  bottleGroup.add(bottleBody);
+
+  const bottleNeck = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.06, 0.08, 0.3, 10),
+    new THREE.MeshStandardMaterial({ color: 0x2a4a2a, roughness: 0.3, transparent: true, opacity: 0.85 })
+  );
+  bottleNeck.position.y = 0.4;
+  bottleGroup.add(bottleNeck);
+
+  const cap = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.07, 0.07, 0.08, 10),
+    new THREE.MeshStandardMaterial({ color: 0xaa2222 })
+  );
+  cap.position.y = 0.58;
+  bottleGroup.add(cap);
+
+  bottleGroup.position.set(0, -0.85, 0.15);
+  bottleGroup.rotation.x = 0.3;
+  if (arms[1]) arms[1].add(bottleGroup);
+
+  const hpBar = makeHpBar();
+  hpBar.position.y = 5.2;
+  group.add(hpBar);
+
+  const nameLabel = makeNameLabel('🍺 Папа Данила', '#66aaff');
+  nameLabel.position.y = 5.9;
+  group.add(nameLabel);
+
+  group.position.set(0, 0, 15);
+  group.userData = {
+    hp: 5, maxHp: 5, speed: 3.0,
+    name: 'Папа Данила',
+    isPig: false,
+    baseY: 0,
+    angerLevel: 0,
+    talkTimer: 0,
+    burpTimer: 0,
+    phase: 0,
+    phases: DAD_PHASES,
+    talkLines: DAD_PHASES[0].lines,
+    punchCooldown: 0,
+    punchAnim: 0,
+    bruises: [],
+  };
+
+  dadBreathCloud = new THREE.Group();
+  scene.add(dadBreathCloud);
+  for (let i = 0; i < 25; i++) {
+    const size = 0.3 + Math.random() * 0.4;
+    const p = new THREE.Mesh(
+      new THREE.SphereGeometry(size, 8, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x66aa44,
+        transparent: true,
+        opacity: 0.25,
+        roughness: 1,
+      })
+    );
+    p.userData.angle = Math.random() * Math.PI * 2;
+    p.userData.radius = 0.8 + Math.random() * 1.2;
+    p.userData.yOff = Math.random() * 1.5;
+    p.userData.speed = 0.3 + Math.random() * 0.5;
+    p.userData.life = Math.random() * 3;
+    dadBreathCloud.add(p);
+    dadBreathParticles.push(p);
+  }
+
+  scene.add(group);
+  return group;
+}
+
+// ============================================================
+// HP-БАР, ИМЯ
+// ============================================================
+function makeHpBar() {
+  const group = new THREE.Group();
+  const bg = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 0.25),
+    new THREE.MeshBasicMaterial({ color: 0x550000, side: THREE.DoubleSide, depthTest: false })
+  );
+  const fg = new THREE.Mesh(
+    new THREE.PlaneGeometry(2, 0.25),
+    new THREE.MeshBasicMaterial({ color: 0xff2222, side: THREE.DoubleSide, depthTest: false })
+  );
+  fg.position.z = 0.01;
+  bg.renderOrder = 999;
+  fg.renderOrder = 1000;
+  group.add(bg, fg);
+  group.userData.fg = fg;
+  return group;
+}
+
+function updateHpBar(b) {
+  const bar = b.children.find(c => c.userData && c.userData.fg);
+  if (!bar) return;
+  const pct = Math.max(0, b.userData.hp / b.userData.maxHp);
+  bar.userData.fg.scale.x = pct;
+  bar.userData.fg.position.x = -(1 - pct) * 1.0;
+}
+
+function makeNameLabel(text, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 640; canvas.height = 160;
+  const ctx = canvas.getContext('2d');
+
+  ctx.fillStyle = 'rgba(0,0,0,0.65)';
+  ctx.fillRect(10, 30, 620, 100);
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 4;
+  ctx.strokeRect(10, 30, 620, 100);
+
+  ctx.font = 'bold 60px Arial';
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth = 7;
+  ctx.strokeText(text, 320, 80);
+  ctx.fillText(text, 320, 80);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  tex.minFilter = THREE.LinearFilter;
+  const sprite = new THREE.Sprite(
+    new THREE.SpriteMaterial({ map: tex, transparent: true, depthTest: false })
+  );
+  sprite.scale.set(4.5, 1.1, 1);
+  sprite.renderOrder = 1001;
+  return sprite;
+}
+
+// ============================================================
+// СНАРЯДЫ
+// ============================================================
+const projectiles = [];
+let level = 1;
+let boss = null;
+
+function createBanana() {
+  const g = new THREE.Group();
+
+  const curve = new THREE.CatmullRomCurve3([
+    new THREE.Vector3(-0.25, 0, 0),
+    new THREE.Vector3(-0.15, 0.15, 0),
+    new THREE.Vector3(0, 0.2, 0),
+    new THREE.Vector3(0.15, 0.15, 0),
+    new THREE.Vector3(0.25, 0, 0),
+  ]);
+  const banana = new THREE.Mesh(
+    new THREE.TubeGeometry(curve, 20, 0.06, 8, false),
+    new THREE.MeshStandardMaterial({ color: 0xffdd33, roughness: 0.6 })
+  );
+  g.add(banana);
+
+  const tip1 = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 8, 8),
+    new THREE.MeshStandardMaterial({ color: 0x5a3a10 })
+  );
+  tip1.position.set(-0.25, 0, 0);
+  g.add(tip1);
+
+  const tip2 = new THREE.Mesh(
+    new THREE.SphereGeometry(0.06, 8, 8),
+    new THREE.MeshStandardMaterial({ color: 0x5a3a10 })
+  );
+  tip2.position.set(0.25, 0, 0);
+  g.add(tip2);
+
+  g.scale.setScalar(1.5);
+  return g;
+}
+
+function throwProjectile() {
+  let p;
+
+  if (level === 1) {
+    p = createBanana();
+    p.userData.type = 'banana';
+  } else {
+    const geo = new THREE.BoxGeometry(0.8, 0.3, 1.3);
+    const mat = new THREE.MeshStandardMaterial({ color: 0x8b4513 });
+    p = new THREE.Mesh(geo, mat);
+    p.userData.type = 'slipper';
+  }
+
+  // Направление полёта — по взгляду камеры
+  const dir = new THREE.Vector3(
+    -Math.sin(player.yaw) * Math.cos(player.pitch),
+    Math.sin(player.pitch),
+    -Math.cos(player.yaw) * Math.cos(player.pitch)
+  ).normalize();
+
+  const startPos = player.pos.clone();
+  startPos.y = 1.8;
+  startPos.add(dir.clone().multiplyScalar(1.0));
+  p.position.copy(startPos);
+  p.userData.dir = dir.clone();
+  p.userData.speed = 30;
+  p.userData.life = 3;
+
+  scene.add(p);
+  projectiles.push(p);
+
+  playThrow();
+
+  if (baboon.userData.arms) {
+    const arm = baboon.userData.arms[1];
+    if (arm) {
+      arm.rotation.x = -1.5;
+      setTimeout(() => arm.rotation.x = 0, 200);
+    }
+  }
+
+  if (boss) boss.userData.angerLevel = Math.min(1, boss.userData.angerLevel + 0.2);
+}
+
+// ============================================================
+// КРОВЬ
+// ============================================================
+const bloodSplats = [];
+
+function createBloodSplat(position, isPig) {
+  const color = isPig ? 0xaa2233 : 0xdd1122;
+  const count = 8 + Math.floor(Math.random() * 6);
+
+  for (let i = 0; i < count; i++) {
+    const size = 0.05 + Math.random() * 0.1;
+    const drop = new THREE.Mesh(
+      new THREE.SphereGeometry(size, 6, 6),
+      new THREE.MeshStandardMaterial({ color, roughness: 0.4, transparent: true })
+    );
+    drop.position.copy(position);
+    drop.position.x += (Math.random() - 0.5) * 0.6;
+    drop.position.y += (Math.random() - 0.5) * 0.6;
+    drop.position.z += (Math.random() - 0.5) * 0.6;
+
+    drop.userData.vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 6,
+      Math.random() * 4 + 1,
+      (Math.random() - 0.5) * 6
+    );
+    drop.userData.life = 1.5 + Math.random() * 1;
+    drop.userData.isBlood = true;
+    scene.add(drop);
+    bloodSplats.push(drop);
+  }
+
+  if (boss) {
+    const bruise = new THREE.Mesh(
+      new THREE.SphereGeometry(0.15 + Math.random() * 0.1, 8, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x662233,
+        transparent: true,
+        opacity: 0.7,
+        roughness: 1,
+      })
+    );
+    const a = Math.random() * Math.PI * 2;
+    bruise.position.set(
+      Math.cos(a) * 0.5,
+      1.5 + Math.random() * 1.2,
+      Math.sin(a) * 0.5 + 0.4
+    );
+    bruise.scale.z = 0.3;
+    bruise.userData.life = 5 + Math.random() * 3;
+    bruise.userData.isBruise = true;
+    boss.add(bruise);
+    if (!boss.userData.bruises) boss.userData.bruises = [];
+    boss.userData.bruises.push(bruise);
+  }
+}
+
+function updateBlood(dt) {
+  for (let i = bloodSplats.length - 1; i >= 0; i--) {
+    const b = bloodSplats[i];
+    if (b.userData.isBlood) {
+      b.userData.vel.y -= 20 * dt;
+      b.position.addScaledVector(b.userData.vel, dt);
+      b.userData.life -= dt;
+      if (b.position.y < 0.05) {
+        b.position.y = 0.05;
+        b.userData.vel.set(0, 0, 0);
+      }
+      b.material.opacity = Math.max(0, b.userData.life / 1.5);
+      if (b.userData.life <= 0) {
+        scene.remove(b);
+        bloodSplats.splice(i, 1);
+      }
+    } else if (b.userData.isBruise) {
+      b.userData.life -= dt;
+      b.material.opacity = Math.max(0, b.userData.life / 5);
+      if (b.userData.life <= 0) {
+        b.parent?.remove(b);
+        bloodSplats.splice(i, 1);
+      }
+    }
+  }
+}
+
+// ============================================================
+// ФАЗЫ
+// ============================================================
+function applyPhase(b) {
+  const ud = b.userData;
+  const phase = ud.phases[ud.phase];
+  ud.speed = phase.speed;
+  ud.talkLines = phase.lines;
+  ud.hp = phase.hp;
+
+  b.traverse(child => {
+    if (child.material && child.material.color && child.userData.isBody) {
+      child.material.color.setHex(phase.color);
+    }
+  });
+
+  if (ud.isPig && b.userData.procBody) {
+    b.userData.procBody.traverse(child => {
+      if (child.material && child.material.color) {
+        const c = child.material.color.getHex();
+        if ((c & 0xff0000) > 0xaa0000 && (c & 0x00ff00) > 0x880000) {
+          child.material.color.setHex(phase.color);
+        }
+      }
+    });
+  }
+
+  b.scale.setScalar(phase.scale);
+
+  phaseName.textContent = `Фаза ${ud.phase + 1}/5`;
+  const pct = (ud.phase + 1) / 5;
+  phaseFill.style.width = (pct * 100) + '%';
+  phaseFill.style.background = '#' + phase.color.toString(16).padStart(6, '0');
+
+  const line = phase.lines[Math.floor(Math.random() * phase.lines.length)];
+  bossSay(line, 2200);
+
+  if (ud.isPig) playOink();
+}
+
+// ============================================================
+// КАНАВА
+// ============================================================
+const pitBubbles = [];
+
+function createPooPit(x, z) {
+  const g = new THREE.Group();
+  const pit = new THREE.Mesh(
+    new THREE.CylinderGeometry(2.2, 2.2, 0.4, 24),
+    new THREE.MeshStandardMaterial({ color: 0x1a0f05 })
+  );
+  pit.position.y = 0.02;
+  g.add(pit);
+
+  const pooMat = new THREE.MeshStandardMaterial({ color: 0x6b4423, roughness: 1 });
+  const poo = new THREE.Mesh(new THREE.CylinderGeometry(2.0, 1.9, 0.8, 24), pooMat);
+  poo.position.y = -0.1;
+  g.add(poo);
+
+  for (let i = 0; i < 12; i++) {
+    const lump = new THREE.Mesh(
+      new THREE.SphereGeometry(0.3 + Math.random() * 0.25, 10, 10),
+      pooMat
+    );
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 1.5;
+    lump.position.set(Math.cos(a) * r, 0.2 + Math.random() * 0.15, Math.sin(a) * r);
+    lump.scale.y = 0.6 + Math.random() * 0.4;
+    g.add(lump);
+  }
+
+  g.position.set(x, 0, z);
+  scene.add(g);
+
+  const bubbleInterval = setInterval(() => {
+    if (!g.parent) { clearInterval(bubbleInterval); return; }
+    const size = 0.08 + Math.random() * 0.12;
+    const bubble = new THREE.Mesh(
+      new THREE.SphereGeometry(size, 8, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0x8b6b3a,
+        transparent: true,
+        opacity: 0.9,
+        roughness: 0.4,
+      })
+    );
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 1.7;
+    bubble.position.set(x + Math.cos(a) * r, 0.3, z + Math.sin(a) * r);
+    bubble.userData.life = 0;
+    bubble.userData.maxLife = 1.5 + Math.random() * 1.5;
+    bubble.userData.startY = 0.3;
+    scene.add(bubble);
+    pitBubbles.push(bubble);
+  }, 250);
+
+  const soundInterval = setInterval(() => {
+    if (!g.parent) { clearInterval(soundInterval); return; }
+    if (Math.random() < 0.4) playBubble();
+  }, 700);
+
+  return g;
+}
+
+// ============================================================
+// УНИТАЗ
+// ============================================================
+const toiletBubbles = [];
+let waterMesh = null;
+
+function createToilet(x, z) {
+  const g = new THREE.Group();
+  const white = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.3 });
+
+  const bowl = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 0.85, 1.3, 24), white);
+  bowl.position.y = 0.65;
+  bowl.castShadow = true;
+  g.add(bowl);
+
+  const inner = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.9, 0.6, 0.9, 20),
+    new THREE.MeshStandardMaterial({ color: 0x111118 })
+  );
+  inner.position.y = 0.9;
+  g.add(inner);
+
+  const water = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.85, 0.85, 0.15, 20),
+    new THREE.MeshStandardMaterial({ color: 0x4499ff, transparent: true, opacity: 0.75 })
+  );
+  water.position.y = 0.6;
+  g.add(water);
+  waterMesh = water;
+
+  const rim = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.12, 10, 26), white);
+  rim.rotation.x = Math.PI/2;
+  rim.position.y = 1.3;
+  g.add(rim);
+
+  const tank = new THREE.Mesh(new THREE.BoxGeometry(1.8, 1.6, 0.6), white);
+  tank.position.set(0, 1.5, -1.1);
+  tank.castShadow = true;
+  g.add(tank);
+
+  const btn = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.15, 0.15, 0.08, 12),
+    new THREE.MeshStandardMaterial({ color: 0xcccccc })
+  );
+  btn.position.set(0, 2.35, -1.1);
+  g.add(btn);
+
+  g.position.set(x, 0, z);
+  scene.add(g);
+
+  const bubbleInterval = setInterval(() => {
+    if (!g.parent || !waterMesh) { clearInterval(bubbleInterval); return; }
+    const size = 0.04 + Math.random() * 0.08;
+    const bubble = new THREE.Mesh(
+      new THREE.SphereGeometry(size, 8, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        transparent: true,
+        opacity: 0.6,
+      })
+    );
+    const a = Math.random() * Math.PI * 2;
+    const r = Math.random() * 0.7;
+    bubble.position.set(x + Math.cos(a) * r, 0.55, z + Math.sin(a) * r);
+    bubble.userData.life = 0;
+    bubble.userData.maxLife = 1.2 + Math.random() * 1.2;
+    bubble.userData.startY = 0.55;
+    scene.add(bubble);
+    toiletBubbles.push(bubble);
+  }, 200);
+
+  return g;
+}
+
+// ============================================================
+// БРЫЗГИ
+// ============================================================
+function spawnSplashes(position, color, count = 30) {
+  const particles = [];
+  for (let i = 0; i < count; i++) {
+    const p = new THREE.Mesh(
+      new THREE.SphereGeometry(0.1 + Math.random() * 0.1, 6, 6),
+      new THREE.MeshStandardMaterial({ color, transparent: true, opacity: 1 })
+    );
+    p.position.copy(position);
+    p.userData.vel = new THREE.Vector3(
+      (Math.random() - 0.5) * 8,
+      Math.random() * 6 + 3,
+      (Math.random() - 0.5) * 8
+    );
+    p.userData.life = 1.5 + Math.random() * 0.5;
+    scene.add(p);
+    particles.push(p);
+  }
+  return particles;
+}
+
+let activeParticles = [];
+function updateParticles(dt) {
+  for (let i = activeParticles.length - 1; i >= 0; i--) {
+    const p = activeParticles[i];
+    p.userData.vel.y -= 15 * dt;
+    p.position.addScaledVector(p.userData.vel, dt);
+    p.userData.life -= dt;
+    p.material.opacity = Math.max(0, p.userData.life);
+    if (p.userData.life <= 0) {
+      scene.remove(p);
+      activeParticles.splice(i, 1);
+    }
+  }
+
+  for (let i = pitBubbles.length - 1; i >= 0; i--) {
+    const b = pitBubbles[i];
+    b.userData.life += dt;
+    const k = b.userData.life / b.userData.maxLife;
+    b.position.y = b.userData.startY + k * 1.5;
+    b.scale.setScalar(1 + k * 0.5);
+    b.material.opacity = Math.max(0, 1 - k);
+    if (k >= 1) {
+      scene.remove(b);
+      pitBubbles.splice(i, 1);
+    }
+  }
+
+  for (let i = toiletBubbles.length - 1; i >= 0; i--) {
+    const b = toiletBubbles[i];
+    b.userData.life += dt;
+    const k = b.userData.life / b.userData.maxLife;
+    b.position.y = b.userData.startY + k * 0.9;
+    b.scale.setScalar(1 + k * 0.8);
+    b.material.opacity = Math.max(0, 0.6 - k * 0.6);
+    if (k >= 1) {
+      scene.remove(b);
+      toiletBubbles.splice(i, 1);
+    }
+  }
+
+  if (waterMesh && waterMesh.parent) {
+    waterMesh.scale.y = 1 + Math.sin(performance.now() / 200) * 0.15;
+    waterMesh.scale.x = 1 + Math.sin(performance.now() / 300) * 0.03;
+    waterMesh.scale.z = 1 + Math.cos(performance.now() / 300) * 0.03;
+  }
+
+  if (dadBreathCloud && boss && !boss.userData.isPig) {
+    const bossPos = boss.position;
+    const headY = 3.5 * boss.userData.phases[boss.userData.phase].scale;
+    const t = performance.now() / 1000;
+
+    dadBreathParticles.forEach((p, i) => {
+      p.userData.life += dt;
+      const a = p.userData.angle + t * p.userData.speed;
+      const r = p.userData.radius;
+      const dirX = (player.pos.x - bossPos.x);
+      const dirZ = (player.pos.z - bossPos.z);
+      const len = Math.sqrt(dirX*dirX + dirZ*dirZ) || 1;
+      const normX = dirX / len;
+      const normZ = dirZ / len;
+
+      const forwardOffset = 1.2 + Math.sin(p.userData.life * 0.7) * 0.8;
+      p.position.set(
+        bossPos.x + normX * forwardOffset + Math.cos(a) * r * 0.5,
+        headY - 0.3 + Math.sin(a * 1.3) * 0.4 + Math.sin(p.userData.life) * 0.3,
+        bossPos.z + normZ * forwardOffset + Math.sin(a) * r * 0.5
+      );
+      const pulse = 1 + Math.sin(p.userData.life * 2 + i) * 0.2;
+      p.scale.setScalar(pulse);
+      p.material.opacity = 0.15 + Math.sin(p.userData.life * 1.5 + i) * 0.1 + 0.15;
+    });
+  } else if (dadBreathCloud) {
+    dadBreathParticles.forEach(p => { p.position.set(0, -10, 0); });
+  }
+}
+
+// ============================================================
+// SLOW-MO
+// ============================================================
+let slowMoActive = false;
+function startSlowMo() {
+  slowMoActive = true;
+  slowmoEl.classList.add('active');
+}
+function endSlowMo() {
+  slowMoActive = false;
+  slowmoEl.classList.remove('active');
+}
+
+// ============================================================
+// ФИНАЛ
+// ============================================================
+let victoryTriggered = false;
+
+function killBoss() {
+  if (!boss) return;
+  const b = boss;
+  boss = null;
+
+  if (level === 1) {
+    levelEl.textContent = '🐷 МАМА ПАДАЕТ В КАНАВУ С ДЕРЬМОМ!';
+    levelEl.style.color = '#cc8844';
+    bossSay('Хрюююююю! Неееет!', 2500, 'mama');
+    playBossScream(true);
+
+    createPooPit(b.position.x, b.position.z + 2);
+    startSlowMo();
+
+    const t0 = performance.now();
+    const startY = b.position.y;
+    const startZ = b.position.z;
+    const startRot = b.rotation.z;
+
+    function anim() {
+      const realElapsed = (performance.now() - t0);
+      const simElapsed = realElapsed * 0.4;
+      const k = Math.min(1, simElapsed / 2000);
+
+      b.position.z = startZ + 2 * k;
+      b.position.y = startY + Math.sin(k * Math.PI) * 2 - k * 3;
+      b.rotation.z = startRot + k * Math.PI * 8;
+      b.rotation.x = k * Math.PI * 4;
+      b.scale.setScalar(Math.max(0.3, 1 - k * 0.6));
+
+      if (k < 1) requestAnimationFrame(anim);
+      else {
+        activeParticles.push(...spawnSplashes(b.position, 0x6b4423, 80));
+        playSplash();
+        setTimeout(playBubble, 200);
+        bossSay('Хрю-хрю-хрю!', 2000, 'mama');
+        setTimeout(() => {
+          scene.remove(b);
+          endSlowMo();
+          setTimeout(nextLevel, 1200);
+        }, 800);
+      }
+    }
+    anim();
+  } else {
+    levelEl.textContent = '🍺 ПАПА ЛЕТИТ В УНИТАЗ!';
+    levelEl.style.color = '#88ddff';
+    bossSay('Данил, я всё вижу!', 2500, 'papa');
+    playBossScream(false);
+
+    createToilet(b.position.x, b.position.z + 2);
+    startSlowMo();
+
+    const t0 = performance.now();
+    const startY = b.position.y;
+    const startZ = b.position.z;
+
+    function anim() {
+      const realElapsed = (performance.now() - t0);
+      const simElapsed = realElapsed * 0.4;
+      const k = Math.min(1, simElapsed / 2000);
+
+      b.position.y = startY + Math.sin(k * Math.PI) * 3 - k * 1.5;
+      b.position.z = startZ + 2 * k;
+      b.rotation.x = k * Math.PI;
+      b.scale.set(1 - k * 0.7, 1 - k * 0.5, 1 - k * 0.7);
+
+      if (k < 1) requestAnimationFrame(anim);
+      else {
+        activeParticles.push(...spawnSplashes(b.position, 0x66aaff, 70));
+        playSplash();
+        setTimeout(playFlush, 300);
+        setTimeout(playBubble, 500);
+        bossSay('Буль-буль-буль!', 2000, 'papa');
+        setTimeout(() => {
+          scene.remove(b);
+          endSlowMo();
+          setTimeout(showVictory, 1200);
+        }, 800);
+      }
+    }
+    anim();
+  }
+}
+
+function nextLevel() {
+  level = 2;
+  levelEl.textContent = 'Уровень 2: Папа-алкоголик';
+  levelEl.style.color = '#ffdd44';
+  boss = createBossDad();
+  boss.userData.phase = 0;
+  applyPhase(boss);
+  setTimeout(() => bossSay('Данил, ты пожалеешь!', 2500, 'papa'), 500);
+}
+
+// ============================================================
+// РЕКОРДЫ
+// ============================================================
+const RECORDS_KEY = 'baboon_game_records_v1';
+
+function loadRecords() {
+  try {
+    const data = localStorage.getItem(RECORDS_KEY);
+    return data ? JSON.parse(data) : [];
+  } catch (e) { return []; }
+}
+
+function saveRecord(name, time) {
+  const records = loadRecords();
+  records.push({ name, time, date: new Date().toLocaleDateString() });
+  records.sort((a, b) => a.time - b.time);
+  const top = records.slice(0, 10);
+  try { localStorage.setItem(RECORDS_KEY, JSON.stringify(top)); } catch (e) {}
+  return top;
+}
+
+function showRecords() {
+  const records = loadRecords();
+  recordsList.innerHTML = '';
+  if (records.length === 0) {
+    recordsList.innerHTML = '<li style="color:#888;">Пока пусто — стань первым!</li>';
+  } else {
+    records.forEach((r, i) => {
+      const li = document.createElement('li');
+      const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `${i+1}.`;
+      li.innerHTML = `<b>${medal}</b> ${r.name} — <b>${r.time.toFixed(1)}с</b> <span style="color:#888;font-size:14px;">(${r.date})</span>`;
+      recordsList.appendChild(li);
+    });
+  }
+}
+
+function showVictory() {
+  victoryTriggered = true;
+  stopMusic();
+  stopSpeech();
+  document.exitPointerLock();
+  hud.classList.add('hidden');
+  hint.classList.add('hidden');
+  centerCursor.classList.remove('visible');
+  speechEl.classList.remove('show');
+  phaseDisplay.classList.add('hidden');
+  recordsBtn.classList.add('hidden');
+  document.body.style.cursor = 'default';
+
+  const elapsed = (performance.now() - player.startTime) / 1000;
+
+  let playerName = prompt('🏆 ПОБЕДА! Введи своё имя для таблицы рекордов:', 'Бабуин');
+  if (!playerName) playerName = 'Аноним';
+  playerName = playerName.slice(0, 20);
+
+  const records = saveRecord(playerName, elapsed);
+  const place = records.findIndex(r => r.name === playerName && Math.abs(r.time - elapsed) < 0.01);
+  const medal = place === 0 ? '🥇 1-е место!' : place === 1 ? '🥈 2-е место!' : place === 2 ? '🥉 3-е место!' : `Твоё место: ${place + 1}`;
+
+  overlay.classList.remove('hidden');
+  overlay.innerHTML = `
+    <h1 style="color:#ffcc00;">🏆 ПОБЕДА! 🏆</h1>
+    <p style="font-size:32px;">🐷 Мама Данила — в канаве с дерьмом 💩</p>
+    <p style="font-size:32px;">🍺 Папа Данила — вниз головой в унитазе 🚽</p>
+    <p style="font-size:28px; color:#88ffff; margin-top:20px;">Бабуин свободен!</p>
+    <p style="font-size:32px; color:#88ff88;">⏱️ Время: ${elapsed.toFixed(1)}с</p>
+    <p style="font-size:24px; color:#ffcc00;">${medal}</p>
+    <button id="restartBtn" style="margin-top:30px;">Играть снова</button>
+    <button id="recordsBtn2" style="margin-top:15px; background:#88aaff;">🏆 Таблица рекордов</button>
+  `;
+
+  document.getElementById('restartBtn').onclick = () => location.reload();
+  document.getElementById('recordsBtn2').onclick = () => {
+    showRecords();
+    recordsEl.classList.remove('hidden');
+  };
+
+  showRecords();
+}
+
+// ============================================================
+// ГЛАВНЫЙ ЦИКЛ
+// ============================================================
+const clock = new THREE.Clock();
+// Позиция камеры для плавного следования
+const camTarget = new THREE.Vector3();
+
+function update() {
+  requestAnimationFrame(update);
+  const rawDt = Math.min(clock.getDelta(), 0.05);
+  const dt = slowMoActive ? rawDt * 0.4 : rawDt;
+  const t = performance.now() / 1000;
+
+  if (!victoryTriggered && player.startTime > 0) {
+    player.elapsed = (performance.now() - player.startTime) / 1000;
+    if (timeEl) timeEl.textContent = `Время: ${player.elapsed.toFixed(1)}с`;
+  }
+
+  // ==========================================
+  // ИГРОК
+  // ==========================================
+  if (!victoryTriggered && gameStarted) {
+    const forward = new THREE.Vector3(-Math.sin(player.yaw), 0, -Math.cos(player.yaw));
+    const right = new THREE.Vector3(Math.cos(player.yaw), 0, -Math.sin(player.yaw));
+    const move = new THREE.Vector3();
+    if (keys['KeyW'] || keys['ArrowUp'])    move.add(forward);
+    if (keys['KeyS'] || keys['ArrowDown'])  move.sub(forward);
+    if (keys['KeyA'] || keys['ArrowLeft'])  move.sub(right);
+    if (keys['KeyD'] || keys['ArrowRight']) move.add(right);
+
+    let isWalking = false;
+    if (move.lengthSq() > 0) {
+      move.normalize().multiplyScalar(player.speed * dt);
+      player.pos.add(move);
+      player.pos.x = Math.max(-28, Math.min(28, player.pos.x));
+      player.pos.z = Math.max(-28, Math.min(28, player.pos.z));
+      isWalking = true;
+    }
+
+    // Бабуин смотрит туда же, куда камера
+    baboon.rotation.y = player.yaw;
+    baboon.position.set(player.pos.x, player.pos.y, player.pos.z);
+
+    if (isWalking) {
+      const walkPhase = t * 10;
+      if (baboon.userData.arms) {
+        baboon.userData.arms.forEach((arm, i) => {
+          arm.rotation.x = Math.sin(walkPhase + i * Math.PI) * 0.6;
+        });
+      }
+      baboon.position.y = player.pos.y + Math.abs(Math.sin(walkPhase)) * 0.1;
+    } else {
+      if (baboon.userData.arms) {
+        baboon.userData.arms.forEach(arm => {
+          arm.rotation.x *= 0.9;
+        });
+      }
+    }
+
+    // ==========================================
+    // КАМЕРА
+    // ==========================================
+    if (player.firstPerson) {
+      // От 1-го лица
+      camera.position.set(
+        player.pos.x + Math.sin(player.yaw) * 0.3,
+        player.pos.y + 2.1,
+        player.pos.z + Math.cos(player.yaw) * 0.3
+      );
+      camera.rotation.order = 'YXZ';
+      camera.rotation.y = player.yaw;
+      camera.rotation.x = player.pitch;
+    } else {
+      // От 3-го лица — камера сзади бабуина
+      const camDist = 6.0;
+      const camHeight = 3.0;
+
+      // Позиция камеры ЗА бабуином (обратное направлению взгляда)
+      const backX = Math.sin(player.yaw);
+      const backZ = Math.cos(player.yaw);
+
+      // Учитываем pitch (камера опускается/поднимается)
+      const pitchFactor = Math.cos(player.pitch * 0.8);
+
+      camTarget.set(
+        player.pos.x + backX * camDist * pitchFactor,
+        player.pos.y + camHeight + Math.sin(player.pitch) * 3.5,
+        player.pos.z + backZ * camDist * pitchFactor
+      );
+
+      // Плавное следование
+      const lerpSpeed = 1 - Math.pow(0.0001, rawDt);
+      camera.position.x += (camTarget.x - camera.position.x) * lerpSpeed;
+      camera.position.y += (camTarget.y - camera.position.y) * lerpSpeed;
+      camera.position.z += (camTarget.z - camera.position.z) * lerpSpeed;
+
+      // Не проваливаемся под землю
+      camera.position.y = Math.max(1.0, camera.position.y);
+
+      // Смотрим на точку чуть выше бабуина
+      const lookAt = new THREE.Vector3(
+        player.pos.x,
+        player.pos.y + 1.8,
+        player.pos.z
+      );
+      camera.lookAt(lookAt);
+    }
+  }
+
+  // ==========================================
+  // БОСС
+  // ==========================================
+  if (boss && boss.userData.hp > 0) {
+    const ud = boss.userData;
+    const dir = new THREE.Vector3(
+      player.pos.x - boss.position.x, 0,
+      player.pos.z - boss.position.z
+    );
+    const dist = dir.length();
+
+    if (dist > 1.6) {
+      dir.normalize();
+      const speed = ud.speed * (1 + ud.angerLevel * 0.5);
+      boss.position.x += dir.x * speed * dt;
+      boss.position.z += dir.z * speed * dt;
+    }
+
+    // Босс смотрит на игрока
+    const lookDX = player.pos.x - boss.position.x;
+    const lookDZ = player.pos.z - boss.position.z;
+    boss.rotation.y = Math.atan2(lookDX, lookDZ);
+
+    const walkBob = Math.sin(t * 8) * (dist > 1.6 ? 0.15 : 0);
+    boss.position.y = ud.baseY + Math.abs(walkBob) * 0.6;
+    boss.rotation.x = Math.sin(t * 4) * 0.08 * (1 + ud.angerLevel);
+
+    if (ud.isPig) {
+      ud.oinkTimer -= dt;
+      if (ud.oinkTimer <= 0) {
+        ud.oinkTimer = 2 + Math.random() * 3;
+        if (dist < 20) playOink();
+      }
+    } else {
+      ud.burpTimer -= dt;
+      if (ud.burpTimer <= 0) {
+        ud.burpTimer = 4 + Math.random() * 4;
+        if (dist < 20) playBurp();
+      }
+      if (dadBreathParticles.length > 0) {
+        const intensity = 0.15 + ud.angerLevel * 0.2;
+        dadBreathParticles.forEach(p => {
+          p.material.opacity = intensity + Math.sin(performance.now() / 400 + p.userData.life) * 0.1;
+        });
+      }
+    }
+
+    if (ud.angerLevel > 0) {
+      boss.position.x += (Math.random() - 0.5) * ud.angerLevel * 0.1;
+      boss.position.z += (Math.random() - 0.5) * ud.angerLevel * 0.1;
+      ud.angerLevel = Math.max(0, ud.angerLevel - dt * 0.5);
+    }
+
+    ud.talkTimer -= dt;
+    if (ud.talkTimer <= 0 && dist < 15) {
+      ud.talkTimer = 5 + Math.random() * 3;
+      const line = ud.talkLines[Math.floor(Math.random() * ud.talkLines.length)];
+      bossSay(line, 2200);
+    }
+
+    ud.punchCooldown -= dt;
+    ud.punchAnim = Math.max(0, ud.punchAnim - dt * 3);
+
+    if (dist < 2.2) {
+      if (ud.punchCooldown <= 0) {
+        ud.punchCooldown = 0.9;
+        ud.punchAnim = 1.0;
+        playBossPunch();
+        player.hp -= 12;
+        hpEl.textContent = `HP: ${Math.max(0, Math.floor(player.hp))}`;
+
+        if (!player.firstPerson) {
+          const shake = 0.4;
+          camera.position.x += (Math.random() - 0.5) * shake;
+          camera.position.y += (Math.random() - 0.5) * shake;
+          camera.position.z += (Math.random() - 0.5) * shake;
+        }
+
+        if (player.hp <= 0 && !victoryTriggered) {
+          victoryTriggered = true;
+          stopMusic();
+          stopSpeech();
+          document.exitPointerLock();
+          hud.classList.add('hidden');
+          hint.classList.add('hidden');
+          centerCursor.classList.remove('visible');
+          phaseDisplay.classList.add('hidden');
+          speechEl.classList.remove('show');
+          document.body.style.cursor = 'default';
+          overlay.classList.remove('hidden');
+          overlay.innerHTML = `
+            <h1 style="color:#ff3333;">💀 БАБУИН ПАЛ</h1>
+            <p>${ud.name} забил бабуина кулаками...</p>
+            <p style="font-size:20px;color:#aaa;">Пройдено за ${player.elapsed.toFixed(1)}с</p>
+            <button onclick="location.reload()">Попробовать снова</button>
+          `;
+        }
+      }
+    }
+
+    if (boss.userData.arms && ud.punchAnim > 0) {
+      const punchK = Math.sin(ud.punchAnim * Math.PI);
+      boss.userData.arms.forEach(arm => {
+        arm.rotation.x = -punchK * 1.5;
+      });
+    }
+
+    updateHpBar(boss);
+  }
+
+  // ==========================================
+  // СНАРЯДЫ
+  // ==========================================
+  for (let i = projectiles.length - 1; i >= 0; i--) {
+    const p = projectiles[i];
+    p.position.addScaledVector(p.userData.dir, p.userData.speed * dt);
+    p.userData.life -= dt;
+
+    if (p.userData.type === 'banana') {
+      p.rotation.z += dt * 15;
+      p.rotation.x += dt * 8;
+    } else {
+      p.rotation.x += dt * 12;
+      p.rotation.y += dt * 9;
+    }
+
+    if (boss && boss.userData.hp > 0) {
+      const dx = p.position.x - boss.position.x;
+      const dz = p.position.z - boss.position.z;
+      const dy = p.position.y - (boss.position.y + 1.5);
+      const hitRadius = boss.userData.isPig ? 1.8 : 1.6;
+      if (dx*dx + dz*dz < hitRadius*hitRadius && Math.abs(dy) < 2.2) {
+        boss.userData.hp -= 1;
+        boss.userData.angerLevel = 1;
+        scene.remove(p);
+        projectiles.splice(i, 1);
+
+        if (boss.userData.isPig) {
+          playOink();
+        } else {
+          playSlipperHit();
+          if (Math.random() < 0.4) playBurp();
+        }
+
+        const hitPos = p.position.clone();
+        createBloodSplat(hitPos, boss.userData.isPig);
+
+        boss.traverse(child => {
+          if (child.material && child.material.color && child.userData.isBody) {
+            const orig = child.material.color.getHex();
+            child.material.color.setHex(0xffffff);
+            setTimeout(() => child.material.color.setHex(orig), 100);
+          }
+        });
+
+        if (boss.userData.hp <= 0) {
+          if (boss.userData.phase < 4) {
+            boss.userData.phase++;
+            applyPhase(boss);
+          } else {
+            killBoss();
+          }
+        }
+        continue;
+      }
+    }
+
+    if (p.userData.life <= 0 || p.position.y < 0) {
+      scene.remove(p);
+      projectiles.splice(i, 1);
+    }
+  }
+
+  updateParticles(dt);
+  updateBlood(dt);
+  renderer.render(scene, camera);
+}
+
+// ============================================================
+// СТАРТ
+// ============================================================
+boss = createBossMama();
+applyPhase(boss);
+setTimeout(() => bossSay('Данил, домой!', 2500, 'mama'), 800);
+update();
+</script>
+
+</body>
+</html>
